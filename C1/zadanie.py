@@ -1,7 +1,7 @@
 import pygame
 import sys
 import numpy as np
-from utils import read_points, project_point, rotate_x_object, rotate_y_object
+from utils import read_points, project_point, rotate_point, rotate_vector
 from constants import *
 
 
@@ -10,14 +10,24 @@ class CameraSimulation:
         pygame.init()
         self.screen = pygame.display.set_mode((Display.WIDTH, Display.HEIGHT))
         pygame.display.set_caption("3D Camera Simulation")
-        self.camera_position = np.array([0.01, -50, -750])
-        self.camera_rotation = np.array([0.01, 0.01, 0.01])
+        self.camera_position = np.array([0.0, -50, -750])
+        self.camera_rotation = np.array([0.0, 0.0, 0.0])
         self.zoom = 1
         self.f = 1000
         self.speed_up = 10
+        self.rotation_angle = 0.0001
         self.display_table = False
         self.points = read_points("points.txt")
         self.font = pygame.font.Font(None, 24)
+        self.clock = pygame.time.Clock()
+        self.move_vectors = {
+            "forward": np.array([0.0, 0.0, 0.5]),
+            "backward": np.array([0.0, 0.0, -0.5]),
+            "left": np.array([-0.5, 0.0, 0.0]),
+            "right": np.array([0.5, 0.0, 0.0]),
+            "up": np.array([0.0, 0.5, 0.0]),
+            "down": np.array([0.0, -0.5, 0.0]),
+        }
 
     def handle_input(self):
         for event in pygame.event.get():
@@ -35,21 +45,25 @@ class CameraSimulation:
         if keys[pygame.K_m]:
             self.lower_zoom()
         if keys[pygame.K_RIGHT]:
-            self.camera_rotation[0] += 0.0001 * self.speed_up
+            self.camera_rotation[0] += self.rotation_angle * self.speed_up
         if keys[pygame.K_LEFT]:
-            self.camera_rotation[0] -= 0.0001 * self.speed_up
+            self.camera_rotation[0] -= self.rotation_angle * self.speed_up
         if keys[pygame.K_UP]:
-            self.camera_rotation[1] += 0.0001 * self.speed_up
+            self.camera_rotation[1] += self.rotation_angle * self.speed_up
         if keys[pygame.K_DOWN]:
-            self.camera_rotation[1] -= 0.0001 * self.speed_up
+            self.camera_rotation[1] -= self.rotation_angle * self.speed_up
         if keys[pygame.K_w]:
-            self.camera_position[1] -= 0.5
+            self.move_camera("forward")
         if keys[pygame.K_s]:
-            self.camera_position[1] += 0.5
+            self.move_camera("backward")
         if keys[pygame.K_a]:
-            self.camera_position[0] -= 0.5
+            self.move_camera("left")
         if keys[pygame.K_d]:
-            self.camera_position[0] += 0.5
+            self.move_camera("right")
+        if keys[pygame.K_q]:
+            self.move_camera("up")
+        if keys[pygame.K_e]:
+            self.move_camera("down")
         if keys[pygame.K_x]:
             self.f -= 0.1
         if keys[pygame.K_z]:
@@ -61,12 +75,19 @@ class CameraSimulation:
         if keys[pygame.K_r]:
             self.reset_camera()
 
+    def move_camera(self, direction):
+        move = rotate_vector(self.get_move_vector(direction), self.camera_rotation)
+        self.camera_position += move
+
+    def get_move_vector(self, direction):
+        return self.move_vectors[direction]
+
     def higher_zoom(self):
         if self.zoom < 10:
             self.zoom += 0.001
 
     def lower_zoom(self):
-        if self.zoom > 0.001:
+        if self.zoom > 0.1:
             self.zoom -= 0.001
 
     def draw_table(self):
@@ -79,7 +100,9 @@ class CameraSimulation:
         text = self.font.render(f"Z: {self.camera_position[2]:.2f}", True, Colors.WHITE)
         self.screen.blit(text, (10, 100))
         text = self.font.render(
-            f"Camera Rotation: {self.camera_rotation}", True, Colors.WHITE
+            f"Camera Rotation: {'°, '.join([str(round(float(i) * 180, 2)) for i in self.camera_rotation])}",
+            True,
+            Colors.WHITE,
         )
         self.screen.blit(text, (10, 130))
         text = self.font.render(f"Zoom: {self.zoom:.2f}", True, Colors.WHITE)
@@ -88,22 +111,27 @@ class CameraSimulation:
         self.screen.blit(text, (10, 190))
         text = self.font.render(f"Speed Up: {self.speed_up}", True, Colors.WHITE)
         self.screen.blit(text, (10, 220))
+        text = self.font.render(f"FPS: {int(self.clock.get_fps())}", True, Colors.WHITE)
+        self.screen.blit(text, (10, 250))
 
     def draw_all_points(self):
         for key in self.points:
             projected_points = []
             figure_points = self.points[key]
             for point in figure_points:
-                rotated_point = rotate_x_object(point, self.camera_rotation[0])
-                rotated_point = rotate_y_object(rotated_point, self.camera_rotation[1])
-                translated_point = rotated_point - self.camera_position
-                calculated_f = (
-                    self.f / translated_point[2] if translated_point[2] != 0 else 0.0001
+                # Here we implement the camera translation, based on the camera position
+                translated_point = point - self.camera_position
+
+                # Here we implement the camera rotation, based on the camera rotation
+                rotated_point = rotate_point(translated_point, self.camera_rotation)
+
+                projected_point = project_point(rotated_point, self.f)
+                centered_point = (
+                    projected_point[0] * self.zoom + Display.WIDTH / 2,
+                    projected_point[1] * self.zoom + Display.HEIGHT / 2,
                 )
-                projected_point = project_point(translated_point)
-                x = projected_point[0] * calculated_f * self.zoom + Display.WIDTH / 2
-                y = projected_point[1] * calculated_f * self.zoom + Display.HEIGHT / 2
-                projected_points.append((x, y))
+
+                projected_points.append(centered_point)
             for i, edge in enumerate(edges):
                 self.draw_edge(edge, projected_points, Colors.WHITE)
 
@@ -111,22 +139,24 @@ class CameraSimulation:
         pygame.draw.line(self.screen, color, points[edge[0]], points[edge[1]])
 
     def reset_camera(self):
-        self.camera_position = np.array([0.01, -50, -750])
-        self.camera_rotation = np.array([0, 0, 0])
+        self.camera_position = np.array([0.0, -50, -750])
+        self.camera_rotation = np.array([0.0, 0.0, 0.0])
         self.zoom = 1
+        self.rotation_angle = 0.0001
         self.f = 1000
-        self.speed_up = 1
+        self.speed_up = 10
 
     def run_simulation(self):
+
         while True:
             self.screen.fill(Colors.BLACK)
             self.handle_input()
-            for key in self.points:
-                figure_points = self.points[key]
-                self.draw_all_points()
+            self.draw_all_points()
             if self.display_table:
                 self.draw_table()
             pygame.display.flip()
+
+            self.clock.tick(1000)
 
 
 if __name__ == "__main__":
