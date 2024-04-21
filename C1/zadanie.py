@@ -1,7 +1,7 @@
 import pygame
 import sys
 import numpy as np
-from utils import read_points, project_point, rotate_point, rotate_vector
+from utils import read_points, project_point, rotate_point, rotate_vector, transform_point
 from constants import *
 
 
@@ -10,7 +10,7 @@ class CameraSimulation:
         pygame.init()
         self.screen = pygame.display.set_mode((Display.WIDTH, Display.HEIGHT))
         pygame.display.set_caption("3D Camera Simulation")
-        self.camera_position = np.array([0.0, -50, -750])
+        self.camera_position = np.array([0.0, 50, 750])
         self.camera_rotation = np.array([0.0, 0.0, 0.0])
         self.zoom = 1
         self.f = 1000
@@ -21,12 +21,12 @@ class CameraSimulation:
         self.font = pygame.font.Font(None, 24)
         self.clock = pygame.time.Clock()
         self.move_vectors = {
-            "forward": np.array([0.0, 0.0, 0.5]),
-            "backward": np.array([0.0, 0.0, -0.5]),
-            "left": np.array([-0.5, 0.0, 0.0]),
-            "right": np.array([0.5, 0.0, 0.0]),
-            "up": np.array([0.0, 0.5, 0.0]),
-            "down": np.array([0.0, -0.5, 0.0]),
+            "forward": np.array([0.0, 0.0, -0.5]),
+            "backward": np.array([0.0, 0.0, 0.5]),
+            "left": np.array([0.5, 0.0, 0.0]),
+            "right": np.array([-0.5, 0.0, 0.0]),
+            "up": np.array([0.0, -0.5, 0.0]),
+            "down": np.array([0.0, 0.5, 0.0]),
         }
 
     def handle_input(self):
@@ -116,30 +116,22 @@ class CameraSimulation:
 
     def draw_all_points(self):
         for key in self.points:
-            projected_points = []
             figure_points = self.points[key]
-            for point in figure_points:
-                # Here we implement the camera translation, based on the camera position
-                translated_point = point - self.camera_position
+            self.draw_figure(figure_points)
 
-                # Here we implement the camera rotation, based on the camera rotation
-                rotated_point = rotate_point(translated_point, self.camera_rotation)
-
-                projected_point = project_point(rotated_point, self.f)
-                centered_point = (
-                    projected_point[0] * self.zoom + Display.WIDTH / 2,
-                    projected_point[1] * self.zoom + Display.HEIGHT / 2,
-                )
-
-                projected_points.append(centered_point)
-            for i, edge in enumerate(edges):
-                self.draw_edge(edge, projected_points, Colors.WHITE)
+    def draw_figure(self, figure_points):
+        transformed_points = []
+        for point in figure_points:
+            transformed_point = transform_point(point, self.camera_position, self.camera_rotation, self.f, self.zoom)
+            transformed_points.append(transformed_point)
+        for i, edge in enumerate(edges):
+            self.draw_edge(edge, transformed_points, Colors.WHITE)
 
     def draw_edge(self, edge, points, color):
         pygame.draw.line(self.screen, color, points[edge[0]], points[edge[1]])
 
     def reset_camera(self):
-        self.camera_position = np.array([0.0, -50, -750])
+        self.camera_position = np.array([0.0, 50, 750])
         self.camera_rotation = np.array([0.0, 0.0, 0.0])
         self.zoom = 1
         self.rotation_angle = 0.0001
@@ -147,7 +139,6 @@ class CameraSimulation:
         self.speed_up = 10
 
     def run_simulation(self):
-
         while True:
             self.screen.fill(Colors.BLACK)
             self.handle_input()
