@@ -267,12 +267,12 @@ class CameraSimulation:
         self.screen.blit(wall_surface, (0, 0))
 
     def reset_camera(self):
-        self.camera_position = np.array([0.0, -50, -750])
+        self.camera_position = np.array([0.0, 50, 750])
         self.camera_rotation = np.array([0.0, 0.0, 0.0])
         self.zoom = 1
         self.rotation_angle = 0.0001
         self.f = 1000
-        self.speed_up = 10
+        self.speed_up = 75
 
     def run_simulation(self):
         while True:
@@ -294,5 +294,5 @@ class CameraSimulation:
 
 
 if __name__ == "__main__":
-    simulation = CameraSimulation(partition_factor=2)
+    simulation = CameraSimulation(partition_factor=3)
     simulation.run_simulation()
