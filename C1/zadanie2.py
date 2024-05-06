@@ -51,6 +51,9 @@ class CameraSimulation:
         self.clock = pygame.time.Clock()
         self.points = read_points("points.txt")
         self.figures = self.create_figures()
+        self.walls = self.get_walls()
+        self.partitioned_walls = self.partition_walls()
+        self.light_strength = 1
         self.move_vectors = {
             "forward": np.array([0.0, 0.0, -0.05]),
             "backward": np.array([0.0, 0.0, 0.05]),
@@ -74,6 +77,23 @@ class CameraSimulation:
 
         return figures
 
+    def get_walls(self):
+        figure_walls = []
+
+        for figure_id, figure in enumerate(self.figures):
+            figure_walls.extend([(figure_id, wall) for wall in figure.get_walls()])
+
+        return figure_walls
+
+    def partition_walls(self):
+        partitioned_walls = []
+
+        for figure_id, wall in self.walls:
+            partitioned_walls.extend(
+                [(figure_id, smaller_wall) for smaller_wall in partition_polygon(wall, self.partition_factor)])
+
+        return partitioned_walls
+
     def handle_input(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -91,6 +111,14 @@ class CameraSimulation:
                     self.draw_walls = not self.draw_walls
                 if event.key == pygame.K_4:
                     self.color_walls = not self.color_walls
+                if event.key == pygame.K_x:
+                    self.partition_factor = max(1, self.partition_factor - 1)
+                    self.walls = self.get_walls()
+                    self.partitioned_walls = self.partition_walls()
+                if event.key == pygame.K_z:
+                    self.partition_factor += 1
+                    self.walls = self.get_walls()
+                    self.partitioned_walls = self.partition_walls()
 
         keys = pygame.key.get_pressed()
         if keys[pygame.K_p]:
@@ -98,13 +126,13 @@ class CameraSimulation:
         if keys[pygame.K_m]:
             self.lower_zoom()
         if keys[pygame.K_RIGHT]:
-            self.camera_rotation[0] += self.rotation_angle * self.get_speed_up()
+            self.camera_rotation[0] += (self.rotation_angle * self.get_speed_up()) % (2 * np.pi)
         if keys[pygame.K_LEFT]:
-            self.camera_rotation[0] -= self.rotation_angle * self.get_speed_up()
+            self.camera_rotation[0] -= (self.rotation_angle * self.get_speed_up()) % (2 * np.pi)
         if keys[pygame.K_UP]:
-            self.camera_rotation[1] += self.rotation_angle * self.get_speed_up()
+            self.camera_rotation[1] += (self.rotation_angle * self.get_speed_up()) % (2 * np.pi)
         if keys[pygame.K_DOWN]:
-            self.camera_rotation[1] -= self.rotation_angle * self.get_speed_up()
+            self.camera_rotation[1] -= (self.rotation_angle * self.get_speed_up()) % (2 * np.pi)
         if keys[pygame.K_w]:
             self.move_camera("forward")
         if keys[pygame.K_s]:
@@ -117,10 +145,10 @@ class CameraSimulation:
             self.move_camera("up")
         if keys[pygame.K_e]:
             self.move_camera("down")
-        if keys[pygame.K_x]:
-            self.f -= 0.1
-        if keys[pygame.K_z]:
-            self.f += 0.1
+        if keys[pygame.K_c]:
+            self.light_strength += 0.01
+        if keys[pygame.K_v]:
+            self.light_strength = max(0.01, self.light_strength - 0.01)
         if keys[pygame.K_EQUALS]:
             self.speed_up = self.speed_up * 1.01 if self.speed_up < 1000 else 1000
         if keys[pygame.K_MINUS]:
@@ -169,36 +197,29 @@ class CameraSimulation:
         self.screen.blit(text, (10, 250))
         text = self.font.render(f"Draw edges: {self.draw_edges}", True, Colors.WHITE)
         self.screen.blit(text, (10, 280))
-        text = self.font.render(f"Draw solid walls: {self.draw_solid_walls}", True, Colors.WHITE)
+        text = self.font.render(f"Draw solid walls: {self.draw_solid_walls} [2]", True, Colors.WHITE)
         self.screen.blit(text, (10, 310))
-        text = self.font.render(f"Draw color walls: {self.color_walls}", True, Colors.WHITE)
+        text = self.font.render(f"Draw walls: {self.draw_walls} [3]", True, Colors.WHITE)
         self.screen.blit(text, (10, 340))
+        text = self.font.render(f"Draw color walls: {self.color_walls} [4]", True, Colors.WHITE)
+        self.screen.blit(text, (10, 370))
+        text = self.font.render(f"Partition factor: {self.partition_factor} [z/x]", True, Colors.WHITE)
+        self.screen.blit(text, (10, 400))
+        text = self.font.render(f"Light strength: {self.light_strength:.2f} [c/v]", True, Colors.WHITE)
+        self.screen.blit(text, (10, 430))
         text = self.font.render("Press H to hide this table", True, Colors.WHITE)
+        self.screen.blit(text, (10, 470))
 
-    def draw_all_figures(self):
-        figure_walls = []
-
-        for figure_id, figure in enumerate(self.figures):
-            figure_walls.extend([(figure_id, wall) for wall in figure.get_walls()])
-
-        self.draw_all_walls(figure_walls)
-
-    def draw_all_walls(self, figure_walls):
-        partitioned_walls = []
-
-        for figure_id, wall in figure_walls:
-            partitioned_walls.extend(
-                [(figure_id, smaller_wall) for smaller_wall in partition_polygon(wall, self.partition_factor)])
-
-        partitioned_walls.sort(key=lambda pair: calculate_depth(pair[1], self.camera_position), reverse=True)
+    def draw_all_walls(self):
+        self.partitioned_walls.sort(key=lambda pair: calculate_depth(pair[1], self.camera_position), reverse=True)
 
         if self.color_walls:
-            self.draw_color_walls(partitioned_walls)
+            self.draw_color_walls()
         else:
-            self.draw_mono_walls(partitioned_walls)
+            self.draw_mono_walls()
 
-    def draw_color_walls(self, partitioned_walls):
-        for figure_id, wall in partitioned_walls:
+    def draw_color_walls(self):
+        for figure_id, wall in self.partitioned_walls:
             transformed_wall = self.transform_points(wall)
 
             if self.draw_walls:
@@ -207,27 +228,33 @@ class CameraSimulation:
                 else:
                     self.draw_wall_see_through(transformed_wall, figure_id)
 
-    def draw_mono_walls(self, partitioned_walls):
-        # Initial color
-        color = [0, 0, 0]
+    def draw_mono_walls(self):
+        # Length to the first wall
+        distance = calculate_depth(self.partitioned_walls[-1][1], self.camera_position)
 
         # Total number of objects to draw
-        total_objects = len(partitioned_walls)
+        total_objects = len(self.partitioned_walls)
 
-        for i, pair in enumerate(partitioned_walls):
+        for i, pair in enumerate(self.partitioned_walls):
             figure_id, wall = pair
 
             transformed_wall = self.transform_points(wall)
+
+            # Calculate darkness based on distance
+            darkness = min(255, max(0, (255 - (distance // 5) / self.light_strength)))
+
             if self.draw_walls:
                 if self.draw_solid_walls:
-                    # Draw wall with current color
-                    self.draw_wall_with_color(transformed_wall, color)
+                    # Draw wall with current darkness
+                    self.draw_wall_with_color(transformed_wall, [darkness, darkness, darkness])
                 else:
-                    # Draw wall see-through with current color
-                    self.draw_wall_see_through_with_color(transformed_wall, color)
+                    # Draw wall see-through with current darkness
+                    self.draw_wall_see_through_with_color(transformed_wall, [darkness, darkness, darkness])
 
-            # Decrease each color component by a fraction
-            color = [min(max(0, component + (255 / total_objects)), 255) for component in color]
+            # Calculate distance for the next object
+            if i < total_objects - 1:
+                next_wall = self.partitioned_walls[i + 1][1]
+                distance = calculate_depth(next_wall, self.camera_position)
 
     def transform_points(self, points):
         transformed_points = []
@@ -278,7 +305,7 @@ class CameraSimulation:
         while True:
             self.screen.fill(Colors.BLACK)
             self.handle_input()
-            self.draw_all_figures()
+            self.draw_all_walls()
             if self.display_table:
                 self.draw_table()
 
@@ -294,5 +321,5 @@ class CameraSimulation:
 
 
 if __name__ == "__main__":
-    simulation = CameraSimulation(partition_factor=3)
+    simulation = CameraSimulation(partition_factor=2)
     simulation.run_simulation()
